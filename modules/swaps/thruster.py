@@ -1,7 +1,8 @@
 import time
+import jwt
 
 from modules import DEX, Logger, RequestClient
-from utils.tools import helper
+from utils.tools import helper, gas_checker
 from general_settings import SLIPPAGE
 from hexbytes import HexBytes
 from config import (
@@ -28,31 +29,45 @@ class Thruster(DEX, Logger, RequestClient):
 
         return from_token_bytes + fee_bytes + to_token_bytes
 
+    @staticmethod
+    def create_api_token():
+        payload = {
+            'iat': int(time.time() * 1000),
+            'exp': int(time.time() * 1000) + 86400
+        }
+        secret = "xTvCUmYa2LxZGpO2btvtd7YfbEqAwWsB8Ch18zRpVNQ="
+        token = jwt.encode(payload, secret, algorithm='HS256')
+        return token
+
     async def get_min_amount_out(self, amount_in_wei, token_in, token_out):
-        url = f"https://api.thruster.finance/quote"
+        url = "https://api.thruster.finance/quote"
 
         headers = {
             "accept": "*/*",
             "accept-language": "ru,en;q=0.9,en-GB;q=0.8,en-US;q=0.7",
-            "sec-ch-ua": "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Microsoft Edge\";v=\"122\"",
+            "if-none-match": "W/\"834-SMgVmVfhHyqCFIW+tNUDHf5wo8A\"",
+            "priority": "u=1, i",
+            "sec-ch-ua": "\"Microsoft Edge\";v=\"123\", \"Chromium\";v=\"123\", \"Not.A/Brand\";v=\"23\"",
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": "\"Windows\"",
             "sec-fetch-dest": "empty",
             "sec-fetch-mode": "cors",
-            "sec-fetch-site": "cross-site",
+            "sec-fetch-site": "same-site",
+            "x-api-key": f"{self.create_api_token()}",
             "referrer": "https://app.thruster.finance/",
             "referrerPolicy": "strict-origin-when-cross-origin",
+            "body": "null",
             "method": "GET",
             "mode": "cors",
             "credentials": "omit"
         }
 
         params = {
-         'amount': amount_in_wei,
-         'tokenIn': token_in.lower(),
-         'tokenOut': token_out.lower(),
-         'type': 'EXACT_INPUT',
-         'chainId': self.client.chain_id
+            'amount': amount_in_wei,
+            'tokenIn': token_in.lower(),
+            'tokenOut': token_out.lower(),
+            'type': 'EXACT_A',
+            'chainId': self.client.chain_id
         }
 
         response = await self.make_request(method="GET", url=url, params=params, headers=headers)
@@ -60,6 +75,7 @@ class Thruster(DEX, Logger, RequestClient):
         return int(min_amount_out - (min_amount_out / 100 * SLIPPAGE))
 
     @helper
+    @gas_checker
     async def swap(self, swapdata: tuple = None):
         if not swapdata:
             from_token_name, to_token_name, amount, amount_in_wei = await self.client.get_auto_amount()
